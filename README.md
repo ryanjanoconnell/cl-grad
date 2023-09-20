@@ -1,0 +1,1 @@
+This is a tensor library with support for automatic differentiation. The tensor operations build a computation graph, and then backprop implements traverses the graph from the terminal node to the input nodes, computing gradeints for each tensor (node) in the computation graph. There is a short example at the end of the file. 
