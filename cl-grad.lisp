@@ -138,7 +138,7 @@
 	      :buffer (make-array (reduce #'* (dims t1))))))
        (dotimes (i (length (buffer result)) result)
 	 (setf (aref (buffer result) i)
-	       (funcall ,bop (aref (buffer t1) i) (aref (buffer t2) i)))))))
+	       (funcall #',bop (aref (buffer t1) i) (aref (buffer t2) i)))))))
 
 (defmacro define-tensor-uop (name uop-name)
   `(defun ,name (t1)
@@ -158,6 +158,19 @@
 	:op ',name
 	:tensor (apply #',t-fn-name ts)))))
 
+;; Define a gradient function for a var function
+(defmacro define-grad-fn (var-fn-name params &body grad-bodies)
+  (assert (equal (1- (length  params)) (length grad-bodies)))
+  (let ((v-out (car params))
+	(v-ins (cdr params)))
+    `(register-grad-fn
+      ',var-fn-name
+      (lambda (,v-out)
+	(destructuring-bind ,v-ins (parents ,v-out)
+	  ,@(mapcar (lambda (v-in grad-body)
+		      `(add-setf (grad ,v-in) ,grad-body))
+		    v-ins
+		    grad-bodies))))))
 ;; Scale
 (defun t-scale (t1 t2)
   (assert (scalar? t1))
@@ -184,12 +197,9 @@
 (defmacro add-setf (t1 t2)
   `(setf ,t1 (addn ,t1 ,t2)))
 
-(defun add-grad (v)
-  (destructuring-bind (p1 p2) (parents v)
-    (add-setf (grad p1) (grad v))
-    (add-setf (grad p2) (grad v))))
-
-(register-grad-fn 'add #'add-grad)
+(define-grad-fn add (v-out v1 v2)
+  (grad v-out)
+  (grad v-out))
 
 ;; Subtract
 (define-tensor-bop t-sub -)
@@ -235,14 +245,9 @@
 
 (define-var-fn matmul t-matmul)
 
-(defun matmul-grad (v)
-  (destructuring-bind (p1 p2) (parents v)
-    (add-setf (grad p1)
-	      (matmul (grad v) (transpose p2)))    
-    (add-setf (grad p2)
-	      (matmul (transpose p1) (grad v)))))
-
-(register-grad-fn 'matmul #'matmul-grad)
+(define-grad-fn matmul (v-out v1 v2)
+  (matmul (grad v-out) (transpose v2))
+  (matmul (transpose v1) (grad v-out)))
 
 ;; Sigmoid
 (defun sig (x)
@@ -256,12 +261,8 @@
   (let ((ones (ones (dims (tensor v)))))
     (mul v (sub ones v))))
 
-(defun sigmoid-grad (v)
-  (destructuring-bind (p) (parents v)
-    (add-setf (grad p)
-	      (mul (grad v) (dsig v)))))
-
-(register-grad-fn 'sigmoid #'sigmoid-grad)
+(define-grad-fn sigmoid (v-out v)
+  (mul (grad v-out) (dsig v-out)))
 
 ;; MSE loss
 (defun t-mse (t1 t2)
@@ -283,16 +284,13 @@
 
 (define-var-fn mse t-mse)
 
-(defun mse-grad (v)
-  (destructuring-bind (p1 p2) (parents v)
-    (add-setf (grad p1)
-	      (scale (mul (grad v) (scalar (/ 1 (entry-count (tensor v)))))
-		     (sub p1 p2)))
-    (add-setf (grad p2)
-	      (scale (mul (grad v) (scalar (/ 1 (entry-count (tensor v)))))
-		     (sub p2 p1)))))
-
-(register-grad-fn 'mse #'mse-grad)
+(define-grad-fn mse (v-out v1 v2)
+  (scale (mul (grad v-out)
+	      (scalar (/ 1 (entry-count (tensor v-out)))))
+	 (sub v1 v2))
+  (scale (mul (grad v-out)
+	      (scalar (/ 1 (entry-count (tensor v-out)))))
+	 (sub v2 v1)))
 
 ;; Backprop
 (defun compute-parent-grads (v)
@@ -311,25 +309,19 @@
 ;;;;; TEST TIME!!!! ;;;;;
 ;;;;; This outputs the same as pytorch ;;;;;;
 
-;; (let* ((w (var '(2 2) #(0.1 0.2 0.3 0.4)))
-;;        (b (var '(2 1) #(0.2 0.3)))
-;;        (x (var '(2 1) #(0.5 0.1)))
-;;        (y (var '(2 1) #(0.1 0.2)))
-;;        (affine (add (matmul w x) b))
-;;        (sig (sigmoid affine))
-;;        (cost (mse sig y)))
-;;   (backward cost)
-;;   (format t "Gradients: ~%")
-;;   (format t "Dw = ~a~%" (grad w))
-;;   (format t "Db = ~a~%" (grad b))
-;;   (format t "Dx = ~a~%" (grad x))
-;;   (format t "Dy = ~a~%" (grad y)))
-
-
-
-
-
-
+(let* ((w (var '(2 2) #(0.1 0.2 0.3 0.4)))
+       (b (var '(2 1) #(0.2 0.3)))
+       (x (var '(2 1) #(0.5 0.1)))
+       (y (var '(2 1) #(0.1 0.2)))
+       (affine (add (matmul w x) b))
+       (sig (sigmoid affine))
+       (cost (mse sig y)))
+  (backward cost)
+  (format t "Gradients: ~%")
+  (format t "Dw = ~a~%" (grad w))
+  (format t "Db = ~a~%" (grad b))
+  (format t "Dx = ~a~%" (grad x))
+  (format t "Dy = ~a~%" (grad y)))
 
 
 
