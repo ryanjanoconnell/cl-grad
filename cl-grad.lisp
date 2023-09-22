@@ -309,6 +309,7 @@
 ;;;;; TEST TIME!!!! ;;;;;
 ;;;;; This outputs the same as pytorch ;;;;;;
 
+
 ;; (let* ((w (var '(2 2) #(0.1 0.2 0.3 0.4)))
 ;;        (b (var '(2 1) #(0.2 0.3)))
 ;;        (x (var '(2 1) #(0.5 0.1)))
