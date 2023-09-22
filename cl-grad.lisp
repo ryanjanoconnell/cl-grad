@@ -128,35 +128,35 @@
 (defun ones (dims)
   (tensor->var (t-ones dims)))
 
-;; Elementwise function makers
-(defun make-tensor-uop (uop)
-  (lambda (t1)
-    (let ((result (copy-tensor t1)))
-      (dotimes (i (length (buffer result)) result)
-	(setf (aref (buffer result) i)
-	      (funcall uop (aref (buffer result) i)))))))
+;; Elementwise function makers, ... could probably just use a single macro rather than two
+(defmacro define-tensor-bop (name bop)
+  `(defun ,name (t1 t2)
+     (let ((result
+	     (make-instance
+	      'tensor
+	      :dims (copy-list (dims t1))
+	      :buffer (make-array (reduce #'* (dims t1))))))
+       (dotimes (i (length (buffer result)) result)
+	 (setf (aref (buffer result) i)
+	       (funcall ,bop (aref (buffer t1) i) (aref (buffer t2) i)))))))
 
-(defun make-tensor-bop (bop)
-  (lambda (t1 t2)
-    (assert (same-shape? t1 t2))
-    (let ((result
-	    (make-instance
-	     'tensor
-	     :dims (copy-list (dims t1))
-	     :buffer (make-array (reduce #'* (dims t1))))))
-      (dotimes (i (length (buffer result)) result)
-	(setf (aref (buffer result) i)
-	      (funcall bop (aref (buffer t1) i) (aref (buffer t2) i)))))))
+(defmacro define-tensor-uop (name uop-name)
+  `(defun ,name (t1)
+     (let ((result (copy-tensor t1)))
+       (dotimes (i (length (buffer result)) result)
+	 (setf (aref (buffer result) i)
+	       (funcall #',uop-name (aref (buffer result) i)))))))
+
 
 ;; Lift a tensor-fn to a var-fn
-(defun wrap-tensor-fn (name t-fn)
-  (lambda (&rest vars)
-    (let ((ts (mapcar #'tensor vars)))
-      (make-instance
-       'var
-       :parents vars
-       :op name
-       :tensor (apply t-fn ts)))))
+(defmacro define-var-fn (name t-fn-name)
+  `(defun ,name (&rest vars)
+     (let ((ts (mapcar #'tensor vars)))
+       (make-instance
+	'var
+	:parents vars
+	:op ',name
+	:tensor (apply #',t-fn-name ts)))))
 
 ;; Scale
 (defun t-scale (t1 t2)
@@ -167,15 +167,12 @@
 	    (* (scalar-val t1)
 	       (aref (buffer result) i))))))
 
-(setf (symbol-function 'scale)
-      (wrap-tensor-fn 'scale #'t-scale))
+(define-var-fn scale t-scale)
 
 ;; Add
-(setf (symbol-function 't-add)
-      (make-tensor-bop #'+))
+(define-tensor-bop t-add +)
 
-(setf (symbol-function 'add)
-      (wrap-tensor-fn 'add #'t-add))
+(define-var-fn add t-add)
 
 (defun addn (v1 v2)
   (cond
@@ -195,25 +192,19 @@
 (register-grad-fn 'add #'add-grad)
 
 ;; Subtract
-(setf (symbol-function 't-sub)
-      (make-tensor-bop #'-))
+(define-tensor-bop t-sub -)
 
-(setf (symbol-function 'sub)
-      (wrap-tensor-fn 'sub #'t-sub))
+(define-var-fn sub t-sub)
 
 ;; Multiplication
-(setf (symbol-function 't-mul)
-      (make-tensor-bop #'*))
+(define-tensor-bop t-mul *)
 
-(setf (symbol-function 'mul)
-      (wrap-tensor-fn 'mul #'t-mul))
+(define-var-fn mul t-mul)
 
 ;; Division
-(setf (symbol-function 't-div)
-      (make-tensor-bop #'/))
+(define-tensor-bop t-div /)
 
-(setf (symbol-function 'div)
-      (wrap-tensor-fn 'div #'t-div))
+(define-var-fn div t-div)
 
 ;; Transpose
 (defun t-transpose (t1)
@@ -226,8 +217,7 @@
       (dotimes (j (cols result))
 	(setf (tref result i j) (tref t1 j i))))))
 
-(setf (symbol-function 'transpose)
-      (wrap-tensor-fn 'transpose #'t-transpose))
+(define-var-fn transpose t-transpose)
 
 ;; Matmul
 (defun t-matmul (t1 t2)
@@ -243,8 +233,7 @@
 	  (incf (tref result i j)
 		(* (tref t1 i k) (tref t2 k j))))))))
 
-(setf (symbol-function 'matmul)
-      (wrap-tensor-fn 'matmul #'t-matmul))
+(define-var-fn matmul t-matmul)
 
 (defun matmul-grad (v)
   (destructuring-bind (p1 p2) (parents v)
@@ -259,11 +248,9 @@
 (defun sig (x)
   (/ 1 (+ 1 (exp (- x)))))
 
-(setf (symbol-function 't-sigmoid)
-      (make-tensor-uop #'sig))
+(define-tensor-uop t-sigmoid sig)
 
-(setf (symbol-function 'sigmoid)
-      (wrap-tensor-fn 'sigmoid #'t-sigmoid))
+(define-var-fn sigmoid t-sigmoid)
 
 (defun dsig (v)
   (let ((ones (ones (dims (tensor v)))))
@@ -294,8 +281,7 @@
 	  (/ acc n))
     result))
 
-(setf (symbol-function 'mse)
-      (wrap-tensor-fn 'mse #'t-mse))
+(define-var-fn mse t-mse)
 
 (defun mse-grad (v)
   (destructuring-bind (p1 p2) (parents v)
@@ -338,6 +324,10 @@
 ;;   (format t "Db = ~a~%" (grad b))
 ;;   (format t "Dx = ~a~%" (grad x))
 ;;   (format t "Dy = ~a~%" (grad y)))
+
+
+
+
 
 
 
