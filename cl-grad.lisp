@@ -33,9 +33,7 @@
 
 (defun get-grad-fn (sym)
   (let ((fn (gethash sym *grad-fns*)))
-    (if fn
-	fn
-	(assert nil () "No registered grad-fn for op: ~a" sym))))
+    (or fn (error "No registered grad-fn for ~a" sym))))
 
 ;; utils
 (defun copy-tensor (t1)
@@ -108,12 +106,10 @@
   (make-instance 'var :tensor t1))
 
 (defun scalar-val (t1)
-  "Unwraps a scalar"
   (assert (scalar? t1))
   (aref (buffer t1) 0))
 
 (defun scalar (val)
-  "Wraps a scalar"
   (tensor->var (make-instance
 		'tensor
 		:buffer
@@ -168,6 +164,7 @@
 		      `(add-setf (grad ,v-in) ,grad-body))
 		    v-ins
 		    grad-bodies))))))
+
 ;; Scale
 (defun t-scale (t1 t2)
   (assert (scalar? t1))
