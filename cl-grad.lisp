@@ -309,24 +309,18 @@
 ;;;;; TEST TIME!!!! ;;;;;
 ;;;;; This outputs the same as pytorch ;;;;;;
 
-(let* ((w (var '(2 2) #(0.1 0.2 0.3 0.4)))
-       (b (var '(2 1) #(0.2 0.3)))
-       (x (var '(2 1) #(0.5 0.1)))
-       (y (var '(2 1) #(0.1 0.2)))
-       (affine (add (matmul w x) b))
-       (sig (sigmoid affine))
-       (cost (mse sig y)))
-  (backward cost)
-  (format t "Gradients: ~%")
-  (format t "Dw = ~a~%" (grad w))
-  (format t "Db = ~a~%" (grad b))
-  (format t "Dx = ~a~%" (grad x))
-  (format t "Dy = ~a~%" (grad y)))
-
-
-
-
-
-
+;; (let* ((w (var '(2 2) #(0.1 0.2 0.3 0.4)))
+;;        (b (var '(2 1) #(0.2 0.3)))
+;;        (x (var '(2 1) #(0.5 0.1)))
+;;        (y (var '(2 1) #(0.1 0.2)))
+;;        (affine (add (matmul w x) b))
+;;        (sig (sigmoid affine))
+;;        (cost (mse sig y)))
+;;   (backward cost)
+;;   (format t "Gradients: ~%")
+;;   (format t "Dw = ~a~%" (grad w))
+;;   (format t "Db = ~a~%" (grad b))
+;;   (format t "Dx = ~a~%" (grad x))
+;;   (format t "Dy = ~a~%" (grad y)))
 
 
