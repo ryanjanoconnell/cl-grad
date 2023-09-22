@@ -150,14 +150,13 @@
 
 ;; Lift a tensor-fn to a var-fn
 (defun wrap-tensor-fn (name t-fn)
-  (setf (symbol-function name) 
-	(lambda (&rest vars)
-	  (let ((ts (mapcar #'tensor vars)))
-	    (make-instance
-	     'var
-	     :parents vars
-	     :op name
-	     :tensor (apply t-fn ts))))))
+  (lambda (&rest vars)
+    (let ((ts (mapcar #'tensor vars)))
+      (make-instance
+       'var
+       :parents vars
+       :op name
+       :tensor (apply t-fn ts)))))
 
 ;; Scale
 (defun t-scale (t1 t2)
@@ -168,13 +167,15 @@
 	    (* (scalar-val t1)
 	       (aref (buffer result) i))))))
 
-(wrap-tensor-fn 'scale #'t-scale)
+(setf (symbol-function 'scale)
+      (wrap-tensor-fn 'scale #'t-scale))
 
 ;; Add
 (setf (symbol-function 't-add)
       (make-tensor-bop #'+))
 
-(wrap-tensor-fn 'add #'t-add)
+(setf (symbol-function 'add)
+      (wrap-tensor-fn 'add #'t-add))
 
 (defun addn (v1 v2)
   (cond
@@ -197,19 +198,22 @@
 (setf (symbol-function 't-sub)
       (make-tensor-bop #'-))
 
-(wrap-tensor-fn 'sub #'t-sub)
+(setf (symbol-function 'sub)
+      (wrap-tensor-fn 'sub #'t-sub))
 
 ;; Multiplication
 (setf (symbol-function 't-mul)
       (make-tensor-bop #'*))
 
-(wrap-tensor-fn 'mul #'t-mul)
+(setf (symbol-function 'mul)
+      (wrap-tensor-fn 'mul #'t-mul))
 
 ;; Division
 (setf (symbol-function 't-div)
       (make-tensor-bop #'/))
 
-(wrap-tensor-fn 'div #'t-div)
+(setf (symbol-function 'div)
+      (wrap-tensor-fn 'div #'t-div))
 
 ;; Transpose
 (defun t-transpose (t1)
@@ -222,7 +226,8 @@
       (dotimes (j (cols result))
 	(setf (tref result i j) (tref t1 j i))))))
 
-(wrap-tensor-fn 'transpose #'t-transpose)
+(setf (symbol-function 'transpose)
+      (wrap-tensor-fn 'transpose #'t-transpose))
 
 ;; Matmul
 (defun t-matmul (t1 t2)
@@ -238,7 +243,8 @@
 	  (incf (tref result i j)
 		(* (tref t1 i k) (tref t2 k j))))))))
 
-(wrap-tensor-fn 'matmul #'t-matmul)
+(setf (symbol-function 'matmul)
+      (wrap-tensor-fn 'matmul #'t-matmul))
 
 (defun matmul-grad (v)
   (destructuring-bind (p1 p2) (parents v)
@@ -256,7 +262,8 @@
 (setf (symbol-function 't-sigmoid)
       (make-tensor-uop #'sig))
 
-(wrap-tensor-fn 'sigmoid #'t-sigmoid)
+(setf (symbol-function 'sigmoid)
+      (wrap-tensor-fn 'sigmoid #'t-sigmoid))
 
 (defun dsig (v)
   (let ((ones (ones (dims (tensor v)))))
@@ -287,7 +294,8 @@
 	  (/ acc n))
     result))
 
-(wrap-tensor-fn 'mse #'t-mse)
+(setf (symbol-function 'mse)
+      (wrap-tensor-fn 'mse #'t-mse))
 
 (defun mse-grad (v)
   (destructuring-bind (p1 p2) (parents v)
