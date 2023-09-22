@@ -4,4 +4,4 @@ The tensor class represents a view into an array. The var class represents a nod
 
 `define-var-op` takes in the name of the var op you wish to define and the name of the underlying tensor op. `define-grad-fn` takes in the name of the var op you are defining gradients for, a parameter list and the recipes for computing the gradients of the arguments to the var op.
 
-After a computation graph has been built by applying var ops to vars, the gradients can be computed using `(backward terminal-var)` where `terminal-var` is the terminal nod ein the computation graph.
+After a computation graph has been built by applying var ops to vars, the gradients can be computed using `(backward terminal-var)` where `terminal-var` is the terminal node in the computation graph.
