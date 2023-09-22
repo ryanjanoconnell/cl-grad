@@ -1,4 +1,4 @@
-This is a tensor automatic differentiation library. It is an implementation of reverse mode automatic differentiation that I indend to use to for a deep learning library at some stage.
+This is a tensor automatic differentiation library. It is an implementation of reverse mode automatic differentiation that I intend to use to for a deep learning library at some stage. There is an (incomplete) example of how it can be used for FNNs in nn.lisp.
 
 The tensor class represents a view into an array. The var class represents a node in a tensor computation graph. This library keeps separate the concept of a node in the computation graph and the underlying tensor. A tensor op can be defined as a function that takes in tensors and returns a new tensor. Tensor ops can be made differentiable using the macro `define-var-op` to lift the tensor op to a var op (a function which takes in vars and returns a var) and then `define-grad-fn` to specify how the gradient of a var op should be computed.
 
