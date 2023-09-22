@@ -61,6 +61,9 @@
 	    :dims (copy-list dims)
 	    :buffer (copy-seq data))))
 
+(defmethod print-object ((t1 tensor) s)
+  (format s "<Tensor Dims: ~a Buffer: ~a>" (dims t1) (buffer t1)))
+
 (defmethod print-object ((v var) s)
   (format s "<Var Dims: ~a Data: ~a>" (dims (tensor v)) (buffer (tensor v))))
 
@@ -128,25 +131,19 @@
 (defun ones (dims)
   (tensor->var (t-ones dims)))
 
-;; Elementwise function makers, ... could probably just use a single macro rather than two
-(defmacro define-tensor-bop (name bop)
-  `(defun ,name (t1 t2)
-     (let ((result
-	     (make-instance
-	      'tensor
-	      :dims (copy-list (dims t1))
-	      :buffer (make-array (reduce #'* (dims t1))))))
-       (dotimes (i (length (buffer result)) result)
-	 (setf (aref (buffer result) i)
-	       (funcall #',bop (aref (buffer t1) i) (aref (buffer t2) i)))))))
-
-(defmacro define-tensor-uop (name uop-name)
-  `(defun ,name (t1)
-     (let ((result (copy-tensor t1)))
-       (dotimes (i (length (buffer result)) result)
-	 (setf (aref (buffer result) i)
-	       (funcall #',uop-name (aref (buffer result) i)))))))
-
+;; tensor entrywise function maker
+(defun entrywise-tensor-fn (op t1 &rest ts)
+  (assert (every (lambda (tn) (same-shape? t1 tn)) ts))
+  (let ((result	(make-instance
+		 'tensor
+		 :dims (copy-list (dims t1))
+		 :buffer (make-array (reduce #'* (dims t1))))))
+    (dotimes (i (length (buffer result)) result)
+      (setf (aref (buffer result) i)
+	    (apply op
+		   (aref (buffer t1) i)
+		   (mapcar (lambda (tn) (aref (buffer tn) i))
+			   ts))))))
 
 ;; Lift a tensor-fn to a var-fn
 (defmacro define-var-fn (name t-fn-name)
@@ -183,7 +180,8 @@
 (define-var-fn scale t-scale)
 
 ;; Add
-(define-tensor-bop t-add +)
+(defun t-add (t1 t2)
+  (entrywise-tensor-fn #'+ t1 t2))
 
 (define-var-fn add t-add)
 
@@ -202,17 +200,20 @@
   (grad v-out))
 
 ;; Subtract
-(define-tensor-bop t-sub -)
+(defun t-sub (t1 t2)
+  (entrywise-tensor-fn #'- t1 t2))
 
 (define-var-fn sub t-sub)
 
 ;; Multiplication
-(define-tensor-bop t-mul *)
+(defun t-mul (t1 t2)
+  (entrywise-tensor-fn #'* t1 t2))
 
 (define-var-fn mul t-mul)
 
 ;; Division
-(define-tensor-bop t-div /)
+(defun t-div (t1 t2)
+  (entrywise-tensor-fn #'/ t1 t2))
 
 (define-var-fn div t-div)
 
@@ -253,7 +254,8 @@
 (defun sig (x)
   (/ 1 (+ 1 (exp (- x)))))
 
-(define-tensor-uop t-sigmoid sig)
+(defun t-sigmoid (t1)
+  (entrywise-tensor-fn #'sig t1))
 
 (define-var-fn sigmoid t-sigmoid)
 
@@ -306,10 +308,8 @@
     (recur v)
     nil))
 
-;;;;; TEST TIME!!!! ;;;;;
+
 ;;;;; This outputs the same as pytorch ;;;;;;
-
-
 ;; (let* ((w (var '(2 2) #(0.1 0.2 0.3 0.4)))
 ;;        (b (var '(2 1) #(0.2 0.3)))
 ;;        (x (var '(2 1) #(0.5 0.1)))
