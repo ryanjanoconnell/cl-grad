@@ -142,14 +142,14 @@
 			   ts))))))
 
 ;; Lift a tensor-fn to a var-fn
-(defmacro define-var-fn (name t-fn-name)
+(defmacro define-var-fn (name t-fn)
   `(defun ,name (&rest vars)
      (let ((ts (mapcar #'tensor vars)))
        (make-instance
 	'var
 	:parents vars
 	:op ',name
-	:tensor (apply #',t-fn-name ts)))))
+	:tensor (apply ,t-fn ts)))))
 
 ;; Define a gradient function for a var function
 (defmacro define-grad-fn (var-fn-name params &body grad-bodies)
@@ -174,20 +174,21 @@
 	    (* (scalar-val t1)
 	       (aref (buffer result) i))))))
 
-(define-var-fn scale t-scale)
+(define-var-fn scale #'t-scale)
 
 ;; Add
 (defun t-add (t1 t2)
   (entrywise-tensor-fn #'+ t1 t2))
 
-(define-var-fn add t-add)
+(define-var-fn add #'t-add)
 
 (defun addn (v1 v2)
   (cond
+    ((and (null v1) (null v2))
+     (error "addn needs a non nil arg"))
     ((null v1) (copy-var v2))
     ((null v2) (copy-var v1))
-    ((and v1 v2) (add v1 v2))
-    (t (assert nil () "addn must have at least one non-nil arg"))))
+    ((and v1 v2) (add v1 v2))))
 
 (defmacro add-setf (t1 t2)
   `(setf ,t1 (addn ,t1 ,t2)))
@@ -200,19 +201,19 @@
 (defun t-sub (t1 t2)
   (entrywise-tensor-fn #'- t1 t2))
 
-(define-var-fn sub t-sub)
+(define-var-fn sub #'t-sub)
 
 ;; Multiplication
 (defun t-mul (t1 t2)
   (entrywise-tensor-fn #'* t1 t2))
 
-(define-var-fn mul t-mul)
+(define-var-fn mul #'t-mul)
 
 ;; Division
 (defun t-div (t1 t2)
   (entrywise-tensor-fn #'/ t1 t2))
 
-(define-var-fn div t-div)
+(define-var-fn div #'t-div)
 
 ;; Transpose
 (defun t-transpose (t1)
@@ -225,7 +226,7 @@
       (dotimes (j (cols result))
 	(setf (tref result i j) (tref t1 j i))))))
 
-(define-var-fn transpose t-transpose)
+(define-var-fn transpose #'t-transpose)
 
 ;; Matmul
 (defun t-matmul (t1 t2)
@@ -241,7 +242,7 @@
 	  (incf (tref result i j)
 		(* (tref t1 i k) (tref t2 k j))))))))
 
-(define-var-fn matmul t-matmul)
+(define-var-fn matmul #'t-matmul)
 
 (define-grad-fn matmul (v-out v1 v2)
   (matmul (grad v-out) (transpose v2))
@@ -254,7 +255,7 @@
 (defun t-sigmoid (t1)
   (entrywise-tensor-fn #'sig t1))
 
-(define-var-fn sigmoid t-sigmoid)
+(define-var-fn sigmoid #'t-sigmoid)
 
 (defun dsig (v)
   (let ((ones (ones (dims (tensor v)))))
@@ -281,7 +282,7 @@
 	  (/ acc n))
     result))
 
-(define-var-fn mse t-mse)
+(define-var-fn mse #'t-mse)
 
 (define-grad-fn mse (v-out v1 v2)
   (scale (mul (grad v-out)
