@@ -1,5 +1,3 @@
-(in-package :cl-user)
-
 (defpackage :cl-grad
   (:use :cl))
 
@@ -115,17 +113,38 @@
 		:buffer
 		(make-array 1 :initial-element val))))
 
+(defun argmax (t1)
+  (let ((max-idx 0)
+	(v (buffer t1)))
+    (dotimes (i (length v) max-idx)
+      (when (> (aref v i) (aref v max-idx))
+	(setf max-idx i)))))
 
 ;; Generators
-(defun t-ones (dims)
+(defun rand-matrix (rows cols)
+  (let ((result (make-instance
+		 'tensor
+		 :dims (list rows cols)
+		 :buffer (make-array (* rows cols)))))
+    (dotimes (i (length (buffer result)) result)
+      (setf (aref (buffer result) i)
+	    (-  (random 1.0) 0.5)))))
+
+(defun t-vals (val dims)
   (make-instance
    'tensor
    :dims (copy-list dims)
    :buffer
-   (make-array (reduce #'* dims) :initial-element 1.0)))
+   (make-array (reduce #'* dims) :initial-element val)))
+
+(defun t-ones (dims)
+  (t-vals 1.0 dims))
 
 (defun ones (dims)
   (tensor->var (t-ones dims)))
+
+(defun t-zeroes (dims)
+  (t-vals 0.0 dims))
 
 ;; tensor entrywise function maker
 (defun entrywise-tensor-fn (op t1 &rest ts)
@@ -166,6 +185,12 @@
 		    grad-bodies))))))
 
 ;; Scale
+(defun t-scale! (alpha t1)
+  (map-into (buffer t1)
+	    (lambda (entry) (* alpha entry))
+	    (buffer t1))
+  t1)
+
 (defun t-scale (t1 t2)
   (assert (scalar? t1))
   (let ((result (copy-tensor t2)))
@@ -177,6 +202,13 @@
 (define-var-fn scale #'t-scale)
 
 ;; Add
+(defun t-add! (t1 t2)
+  (map-into (buffer t1)
+	    (lambda (x y) (+ x y))
+	    (buffer t1)
+	    (buffer t2))
+  t1)
+
 (defun t-add (t1 t2)
   (entrywise-tensor-fn #'+ t1 t2))
 
@@ -305,21 +337,5 @@
 	       (mapc #'recur (parents var)))))
     (recur v)
     nil))
-
-
-;;;;; This outputs the same as pytorch ;;;;;;
-;; (let* ((w (var '(2 2) #(0.1 0.2 0.3 0.4)))
-;;        (b (var '(2 1) #(0.2 0.3)))
-;;        (x (var '(2 1) #(0.5 0.1)))
-;;        (y (var '(2 1) #(0.1 0.2)))
-;;        (affine (add (matmul w x) b))
-;;        (sig (sigmoid affine))
-;;        (cost (mse sig y)))
-;;   (backward cost)
-;;   (format t "Gradients: ~%")
-;;   (format t "Dw = ~a~%" (grad w))
-;;   (format t "Db = ~a~%" (grad b))
-;;   (format t "Dx = ~a~%" (grad x))
-;;   (format t "Dy = ~a~%" (grad y)))
 
 

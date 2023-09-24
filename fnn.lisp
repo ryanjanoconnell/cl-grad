@@ -1,4 +1,5 @@
-(load "./cl-grad.lisp")
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (load "./cl-grad.lisp"))
 
 (in-package :cl-grad)
 
@@ -16,51 +17,24 @@
     (format s "~a~%" (aref (biases fnn) i))
     (format s "~%")))
 
-(defun rand-matrix (rows cols)
-  (let ((result-tensor (make-instance
-			'tensor
-			:dims (list rows cols)
-			:buffer (make-array (* rows cols)))))
-    (dotimes (i (length (buffer result-tensor)))
-      (setf (aref (buffer result-tensor) i) (random 0.1)))
-    (tensor->var result-tensor)))
-
-(defun new-fnn (&rest dims)
-  (let* ((n (1- (length dims)))
+(defun new-fnn (&rest widths)
+  (let* ((n (1- (length widths)))
 	 (ws (make-array n))
 	 (bs (make-array n))
 	 (result (make-instance 'fnn :biases bs :weights ws)))
     (dotimes (i n result)
-      (let ((in-dim (nth i dims))
-	    (out-dim (nth (1+ i) dims)))
-	(setf (aref ws i) (rand-matrix out-dim in-dim))
-	(setf (aref bs i) (rand-matrix out-dim 1))))))
+      (let ((in-width (nth i widths))
+	    (out-width (nth (1+ i) widths)))
+	(setf (aref ws i) (rand-matrix out-width in-width))
+	(setf (aref bs i) (rand-matrix out-width 1))))))
 
 (defun feed (fnn input)
   (let ((x input))
     (loop :for w :across (weights fnn)
 	  :for b :across (biases fnn)
-	  :do (setf x (sigmoid (add (matmul w x) b))))
+	  :do (progn
+		(setf x (t-sigmoid (t-add (t-matmul w x) b)))))
     x))
-
-(defun add! (v1 v2)
-  "Adds the adds the buffer of v2 into the buffer of v1,
-   bypassing the computational graph logic"
-  (let ((t1 (tensor v1))
-	(t2 (tensor v2)))
-    (dotimes (i (length (buffer t1)) t1)
-      (incf (aref (buffer t1) i)
-	    (aref (buffer t2) i)))))
-
-(defun update-weights! (fnn rate)
-  (loop :for w :across (weights fnn)
-	:for b :across (biases fnn)
-	:do (progn
-	      (add! w (scale (scalar (- rate)) (grad w)))
-	      (add! b (scale (scalar (- rate)) (grad b))))))
-
-(defun cost (fnn x y)
-  (mse (feed fnn x) y))
 
 (defun shuffle (vec)
   (let ((temp)
@@ -78,15 +52,36 @@
     (dotimes (i n vec)
       (setf (aref vec i) i))))
 
-(defun item (v)
-  (assert (scalar? (tensor v)))
-  (aref (buffer (tensor v)) 0))
+(defun update-param! (t1 grad-t1 rate)
+  (t-add! t1 (t-scale! (* -1.0 rate) grad-t1)))
 
 (defparameter *noisy* t)
-(defparameter *rate* 0.5)
+(defparameter *rate* 0.1)
 (defparameter *epoch* 100)
 
-;; x-train, y-train are vectors of vars
+;; x, y are tensors
+(defun learn-1 (fnn x y)
+  ;; Wrap everything in a Var
+  (let* ((vx (tensor->var x))
+	 (vy (tensor->var y))
+	 (vws (map 'vector #'tensor->var (weights fnn)))
+	 (vbs (map 'vector #'tensor->var (biases fnn)))
+	 (cost))
+    ;; Compute Cost
+    (loop :for vw :across vws
+	  :for vb :across vbs
+	  :do (setf vx (sigmoid (add (matmul vw vx) vb))))
+    (setf cost (mse vx vy))
+    ;; Compute Gradient of Cost
+    (backward cost)
+    ;; Update Weights and Biases
+    (loop :for vw :across vws
+	  :for vb :across vbs
+	  :do (progn
+		(update-param! (tensor vw) (tensor (grad vw)) *rate*)
+		(update-param! (tensor vb) (tensor (grad vb)) *rate*)))))
+
+;; x-train, y-train are vectors of tensors
 (defun learn (fnn x-train y-train)
   (assert (equal (length x-train) (length y-train)))
   (let* ((n (length x-train))
@@ -94,37 +89,12 @@
     (dotimes (epoch *epoch* fnn)
       (shuffle ids)
       (loop :for i :across ids
+	    :for count :from 0 :to (1- n)
 	    :do (let* ((x (aref x-train i))
-		       (y (aref y-train i))
-		       (c (cost fnn x y)))
-		  (when *noisy* (format t "C = ~a~%" (item c)))
-		  (backward c)
-		  (update-weights! fnn *rate*))))))
-
-
-;; XOR example seems to work occassionally.
-;; Alot of float overflows due to sigmoid though
-;;
-;;
-;; (let ((x-train) (y-train) (fnn))
-;;  
-;;   (setf fnn (new-fnn 2 2 1))
-;;  
-;;   (setf x-train
-;; 	(vector (var '(2 1) #(0 0))
-;; 		(var '(2 1) #(1 0))
-;; 		(var '(2 1) #(0 1))
-;; 		(var '(2 1) #(1 1))))
-;;  
-;;   (setf y-train
-;; 	(vector (var '(1 1) #(0))
-;; 		(var '(1 1) #(1))
-;; 		(var '(1 1) #(1))
-;; 		(var '(1 1) #(0))))
-;;
-;;   (setf *noisy* t)
-;;  
-;;   (learn fnn x-train y-train))
+		       (y (aref y-train i)))
+		  (when (and *noisy* (equal (mod count 1000) 0)) 
+		    (format t "Doing sample ~a~%" count))
+		  (learn-1 fnn x y))))))
 
 
 
