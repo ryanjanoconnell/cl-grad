@@ -1,5 +1,5 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (load "./nn.lisp"))
+  (load "./fnn.lisp"))
 
 (in-package :cl-grad)
 
@@ -44,7 +44,7 @@
 ;;  - 4 byte ncols
 ;;  - 1 byte image data
 (defun read-mnist-imgs (filename nimgs)
-  "Returns vector of img tensors (28x28 matrices). Embarassingly hardcoded for the moment"
+  "Returns vector of img tensors (784x1 matrices). Embarassingly hardcoded for the moment"
   (with-open-file (in filename :element-type '(unsigned-byte 8))
     (let* ((temp-buffer (make-array 4 :element-type '(unsigned-byte 8)))
 	   (img-byte-buffer (make-array (* 28 28) :element-type '(unsigned-byte 8)))
