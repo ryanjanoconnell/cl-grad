@@ -1,6 +1,3 @@
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (load "./fnn.lisp"))
-
 (in-package :cl-grad)
 
 (defun bytes->int (byte-vec)
@@ -80,12 +77,27 @@
       (read-sequence temp-buffer in)
       (dotimes (i nlabels result)
 	(setf label-byte (read-byte in))
-	(setf label-tensor (t-zeroes '(10 1)))
+	(setf label-tensor (zeros '(10 1)))
 	(setf (tref label-tensor label-byte 0) 1.0)
 	(setf (aref result i) label-tensor)))))
 
+(defun column-matrix-to-int (t1)
+  "Takes a one hot encoded col matrix and returns the correspinding integer"
+  (let ((buffer (buffer t1))
+	(idx))
+    (dotimes (i (length buffer))
+      (when (= (aref buffer i) 1.0)
+	(setf idx i)))
+    (assert idx)
+    idx))
+
 (defun classify-img (fnn x)
-  (argmax (feed fnn x)))
+  (let* ((y (feed fnn x))
+	 (buffer (buffer y))
+	 (max-idx 0))
+    (dotimes (i (length buffer) max-idx)
+      (when (> (aref buffer i) (aref buffer max-idx))
+	(setf max-idx i)))))
 
 (defclass test-report ()
   ((failed :initarg :failed
@@ -103,45 +115,45 @@
 	  :documentation
 	  "Number of data being tested")))
 
-(defun test-fnn (fnn x-test y-test)
-  (assert (= (length x-test) (length y-test)))
-  (let ((report (make-instance 'test-report :ndata (length x-test))))
-    (loop :for x :across x-test
-	  :for y :across y-test
-	  :for count :from 0
-	  :do (progn
-		(when (= (mod count 100) 0)
-		  (format t "Testing image ~a~%" count))
-		(if (= (classify-img fnn x) (argmax y))
-		    (incf (ncorrect report))
-		    (setf (failed report)
-			  (cons (cons x y) (failed report))))))
+(defmethod print-object ((r test-report) s)
+  (format t "~%___TEST_REPORT___~%")
+  (format t "~a / ~a Correct~%" (ncorrect r) (ndata r)))
+
+(defun test-model (fnn x-test y-test)
+  (let* ((n (length x-test))
+	 (report (make-instance 'test-report :ndata n)))
+    (for ((x x-test)
+	  (y y-test)
+	  (count (range n)))
+      (format t "Testing image ~a~%" count)
+      (if (= (classify-img fnn x)
+	     (column-matrix-to-int y))
+	  (incf (ncorrect report))
+	  (setf (failed report)
+		(cons (cons x y) (failed report)))))
     report))
 
 ;;;;;;;;; Training and evaluating model ;;;;;;;;;;;;
 
-(defparameter *x-train*
-  (read-mnist-imgs "./mnist/train-images.idx3-ubyte" 60000))
+;; (defparameter *x-train*
+;;   (read-mnist-imgs "./mnist/train-images.idx3-ubyte" 60000))
 
-(defparameter *y-train*
-  (read-mnist-labels "./mnist/train-labels.idx1-ubyte" 60000))
+;; (defparameter *y-train*
+;;   (read-mnist-labels "./mnist/train-labels.idx1-ubyte" 60000))
 
-(defparameter *x-test*
-  (read-mnist-imgs "./mnist/t10k-images.idx3-ubyte" 10000))
+;; (defparameter *x-test*
+;;   (read-mnist-imgs "./mnist/t10k-images.idx3-ubyte" 10000))
 
-(defparameter *y-test*
-  (read-mnist-labels "./mnist/t10k-labels.idx1-ubyte" 10000))
+;; (defparameter *y-test*
+;;   (read-mnist-labels "./mnist/t10k-labels.idx1-ubyte" 10000))
 
-(defparameter *fnn* (new-fnn 784 25 10))
+;; (defparameter *fnn* (new-fnn-model #'sigmoid 784 25 10))
 
-(setf *epoch* 1)
-(setf *rate* 0.1)
-(setf *noisy* t)
+;; (learn-noisy *fnn* *x-train* *y-train* :rate 0.5)
 
-(learn *fnn* *x-train* *y-train*)
+;; (defparameter *report*
+;;   (test-model *fnn* *x-test* *y-test*))
 
-(defparameter *report*
-  (test-fnn *fnn* *x-test* *y-test*))
 
 
 

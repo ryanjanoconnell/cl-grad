@@ -8,11 +8,7 @@
 	   :accessor buffer)
    (dims :initarg :dims
 	 :initform nil
-	 :accessor dims)))
-
-(defclass var ()
-  ((tensor :initarg :tensor
-	   :accessor tensor)
+	 :accessor dims)
    (op :initarg :op
        :initform nil
        :accessor op)
@@ -23,7 +19,6 @@
 	 :initform nil
 	 :accessor grad)))
 
-;; Table of gradient functions
 (defvar *grad-fns* (make-hash-table))
 
 (defun register-grad-fn (sym fn)
@@ -33,59 +28,27 @@
   (let ((fn (gethash sym *grad-fns*)))
     (or fn (error "No registered grad-fn for ~a" sym))))
 
-;; utils
-(defun copy-tensor (t1)
-  (make-instance
-   'tensor
-   :dims (copy-list (dims t1))
-   :buffer (copy-seq (buffer t1))))
-
-(defun copy-var (v)
-  (make-instance
-   'var
-   :parents (copy-list (parents v))
-   :op (op v)
-   :tensor (copy-tensor (tensor v))
-   :grad (grad v)))
-
-(defun var (dims data)
-  (assert (equal (reduce #'* dims) (length data)))
-  (make-instance
-   'var
-   :tensor (make-instance
-	    'tensor
-	    :dims (copy-list dims)
-	    :buffer (copy-seq data))))
-
+;; tensor utils
 (defmethod print-object ((t1 tensor) s)
   (format s "<Tensor Dims: ~a Buffer: ~a>" (dims t1) (buffer t1)))
 
-(defmethod print-object ((v var) s)
-  (format s "<Var Dims: ~a Data: ~a>" (dims (tensor v)) (buffer (tensor v))))
+(defun ten (dims buffer)
+  (assert (equal (reduce #'* dims) (length buffer)))
+  (make-instance
+   'tensor
+   :dims (copy-seq dims)
+   :buffer buffer))
 
 (defun same-shape? (t1 t2)
   (equal (dims t1) (dims t2)))
 
-(defun matrix? (t1)
-  (equal (length (dims t1)) 2))
-
-(defun scalar? (t1)
-  (equal (entry-count t1) 1))
-
-(defun rows (t1)
-  (first (dims t1)))
-
-(defun cols (t1)
-  (second (dims t1)))
-
 (defun entry-count (t1)
   (reduce #'* (dims t1)))
 
-(defun can-matmul? (t1 t2)
-  (and (matrix? t1)
-       (matrix? t2)
-       (equal (cols t1) (rows t2))))
+(defun rank (t1)
+  (length (dims t1)))
 
+;;;;; Accessing and setting tensor values
 (defun linearise-indices (ids dims)
   (assert (equal (length ids) (length dims)))
   (let ((stride 1)
@@ -96,246 +59,251 @@
 		(setf stride (* stride (nth i dims)))))
     idx))
 
-(defmacro tref (t1 &rest indices)
-  `(aref (buffer ,t1)
-	 (linearise-indices (list ,@indices) (dims ,t1))))
+(defun list< (l1 l2)
+  (assert (equal (length l1) (length l2)))
+  (or (null l1)
+      (and (< (car l1) (car l2))
+	   (list< (cdr l1) (cdr l2)))))
 
-(defun tensor->var (t1)
-  (make-instance 'var :tensor t1))
+(defun can-tref? (t1 indices)
+  (and (equal (rank t1) (length indices))
+       (list< indices (dims t1))))
 
-(defun scalar-val (t1)
-  (assert (scalar? t1))
-  (aref (buffer t1) 0))
+(defun tref (t1 &rest indices)
+  (assert (can-tref? t1 indices))
+  (aref (buffer t1)
+	(linearise-indices indices (dims t1))))
 
-(defun scalar (val)
-  (tensor->var (make-instance
-		'tensor
-		:buffer
-		(make-array 1 :initial-element val))))
+(defun (setf tref) (val t1 &rest indices)
+  (assert (can-tref? t1 indices))
+  (setf (aref (buffer t1)
+	      (linearise-indices indices (dims t1)))
+	val))
 
-(defun argmax (t1)
-  (let ((max-idx 0)
-	(v (buffer t1)))
-    (dotimes (i (length v) max-idx)
-      (when (> (aref v i) (aref v max-idx))
-	(setf max-idx i)))))
-
-;; Generators
-(defun rand-matrix (rows cols)
-  (let ((result (make-instance
-		 'tensor
-		 :dims (list rows cols)
-		 :buffer (make-array (* rows cols)))))
-    (dotimes (i (length (buffer result)) result)
-      (setf (aref (buffer result) i)
-	    (-  (random 1.0) 0.5)))))
-
-(defun t-vals (val dims)
+;;;;; Handy tensors
+(defun tensor-with-val (dims val)
   (make-instance
    'tensor
-   :dims (copy-list dims)
+   :dims (copy-seq dims)
    :buffer
    (make-array (reduce #'* dims) :initial-element val)))
 
-(defun t-ones (dims)
-  (t-vals 1.0 dims))
-
 (defun ones (dims)
-  (tensor->var (t-ones dims)))
+  (tensor-with-val dims 1.0))
 
-(defun t-zeroes (dims)
-  (t-vals 0.0 dims))
+(defun zeros (dims)
+  (tensor-with-val dims 0.0))
 
-;; tensor entrywise function maker
-(defun entrywise-tensor-fn (op t1 &rest ts)
-  (assert (every (lambda (tn) (same-shape? t1 tn)) ts))
-  (let ((result	(make-instance
-		 'tensor
-		 :dims (copy-list (dims t1))
-		 :buffer (make-array (reduce #'* (dims t1))))))
-    (dotimes (i (length (buffer result)) result)
-      (setf (aref (buffer result) i)
-	    (apply op
-		   (aref (buffer t1) i)
-		   (mapcar (lambda (tn) (aref (buffer tn) i))
-			   ts))))))
+(defun random-tensor (&rest dims)
+  (let* ((n (reduce #'* dims))
+	 (buffer (make-array n)))
+    (dotimes (i n)
+      (setf (aref buffer i) (- 0.5 (random 1.0))))
+    (make-instance
+     'tensor
+     :dims (copy-seq dims)
+     :buffer buffer)))
 
-;; Lift a tensor-fn to a var-fn
-(defmacro define-var-fn (name t-fn)
-  `(defun ,name (&rest vars)
-     (let ((ts (mapcar #'tensor vars)))
-       (make-instance
-	'var
-	:parents vars
-	:op ',name
-	:tensor (apply ,t-fn ts)))))
+;; Macros to make defining differentiable functions and their
+;; gradient functions more convenient
+(defmacro defdiff (name params &body body)
+  (let ((result-tensor (gensym "Tensor-")))
+    `(defun ,name ,params
+       (let ((,result-tensor (progn ,@body)))
+	 (setf (op ,result-tensor) ',name)
+	 (setf (parents ,result-tensor) (list ,@params))
+	 ,result-tensor))))
 
-;; Define a gradient function for a var function
-(defmacro define-grad-fn (var-fn-name params &body grad-bodies)
-  (assert (equal (1- (length  params)) (length grad-bodies)))
-  (let ((v-out (car params))
-	(v-ins (cdr params)))
-    `(register-grad-fn
-      ',var-fn-name
-      (lambda (,v-out)
-	(destructuring-bind ,v-ins (parents ,v-out)
-	  ,@(mapcar (lambda (v-in grad-body)
-		      `(add-setf (grad ,v-in) ,grad-body))
-		    v-ins
-		    grad-bodies))))))
+(defmacro defgrad (name (t-out . t-ins) &body grad-bodies)
+  `(register-grad-fn
+    ',name
+    (lambda (,t-out)
+      (destructuring-bind ,t-ins (parents ,t-out)
+	,@(mapcar (lambda (t-in grad-body)
+		    `(add-setf (grad ,t-in) ,grad-body))
+		  t-ins
+		  grad-bodies)))))
 
-;; Scale
-(defun t-scale! (alpha t1)
-  (map-into (buffer t1)
-	    (lambda (entry) (* alpha entry))
-	    (buffer t1))
+;; Applys op entry wise to each argument
+(defun entrywise (op t1 &rest tensors)
+  (assert (every (lambda (ten) (same-shape? t1 ten)) tensors))
+  (let ((buffer (make-array (entry-count t1))))
+    (apply #'map-into
+	   buffer
+	   op
+	   (buffer t1)
+	   (mapcar #'buffer tensors))
+    (make-instance
+     'tensor
+     :dims   (dims t1)
+     :buffer  buffer)))
+
+(defun entrywise! (op t1 &rest tensors)
+  (assert (every (lambda (ten) (same-shape? t1 ten)) tensors))
+  (apply #'map-into
+	 (buffer t1)
+	 op
+	 (buffer t1)
+	 (mapcar #'buffer tensors))
   t1)
 
-(defun t-scale (t1 t2)
-  (assert (scalar? t1))
-  (let ((result (copy-tensor t2)))
-    (dotimes (i (length (buffer result)) result)
-      (setf (aref (buffer result) i)
-	    (* (scalar-val t1)
-	       (aref (buffer result) i))))))
+;;;;; addition
+(defdiff add (t1 t2)
+  (entrywise #'+ t1 t2))
 
-(define-var-fn scale #'t-scale)
-
-;; Add
-(defun t-add! (t1 t2)
-  (map-into (buffer t1)
-	    (lambda (x y) (+ x y))
-	    (buffer t1)
-	    (buffer t2))
-  t1)
-
-(defun t-add (t1 t2)
-  (entrywise-tensor-fn #'+ t1 t2))
-
-(define-var-fn add #'t-add)
-
-(defun addn (v1 v2)
+(defun addn (t1 t2)
   (cond
-    ((and (null v1) (null v2))
+    ((and (null t1) (null t2))
      (error "addn needs a non nil arg"))
-    ((null v1) (copy-var v2))
-    ((null v2) (copy-var v1))
-    ((and v1 v2) (add v1 v2))))
+    ((null t1)  t2)
+    ((null t2)  t1)
+    ((and t1 t2) (add t1 t2))))
 
 (defmacro add-setf (t1 t2)
   `(setf ,t1 (addn ,t1 ,t2)))
 
-(define-grad-fn add (v-out v1 v2)
-  (grad v-out)
-  (grad v-out))
+(defgrad add (t-out t1 t2)
+  (grad t-out)
+  (grad t-out))
 
-;; Subtract
-(defun t-sub (t1 t2)
-  (entrywise-tensor-fn #'- t1 t2))
+(defun add! (t1 t2)
+  (entrywise! #'+ t1 t2))
 
-(define-var-fn sub #'t-sub)
-
-;; Multiplication
-(defun t-mul (t1 t2)
-  (entrywise-tensor-fn #'* t1 t2))
-
-(define-var-fn mul #'t-mul)
-
-;; Division
-(defun t-div (t1 t2)
-  (entrywise-tensor-fn #'/ t1 t2))
-
-(define-var-fn div #'t-div)
-
-;; Transpose
-(defun t-transpose (t1)
+;;;;; transpose
+(defdiff transpose (t1)
   (assert (matrix? t1))
-  (let ((result (make-instance
-		 'tensor
-		 :dims (list (cols t1) (rows t1))
-		 :buffer (make-array (* (cols t1) (rows t1))))))
-    (dotimes (i (rows result) result)
-      (dotimes (j (cols result))
-	(setf (tref result i j) (tref t1 j i))))))
+  (let* ((buffer (make-array (entry-count t1)))
+	 (rows (second (dims t1)))
+	 (cols (first (dims t1)))
+	 (dims (list rows cols))
+	 (result (make-instance
+		  'tensor :dims dims :buffer buffer)))
+    (dotimes (i rows result)
+      (dotimes (j cols)
+	(setf (tref result i j)
+	      (tref t1 j i))))))
 
-(define-var-fn transpose #'t-transpose)
+;;;;; matrix matrix multiplication
+(defun matrix? (t1)
+  (equal (rank t1) 2))
 
-;; Matmul
-(defun t-matmul (t1 t2)
-  (assert (can-matmul? t1 t2))
-  (let ((result (make-instance
-		 'tensor
-		 :dims (list (rows t1) (cols t2))
-		 :buffer (make-array (* (rows t1) (cols t2))
-				     :initial-element 0.0))))
-    (dotimes (i (rows result) result)
-      (dotimes (j (cols result))
-	(dotimes (k (cols t1))
+(defun can-mm? (t1 t2)
+  (and (matrix? t1)
+       (matrix? t2)
+       (equal (second (dims t1)) (first (dims t2)))))
+
+(defdiff mm (t1 t2)
+  (assert (can-mm? t1 t2))
+  (let* ((rows (first (dims t1)))
+	 (cols (second (dims t2)))
+	 (n (* rows cols))
+	 (buffer (make-array n))
+	 (result (make-instance
+		  'tensor
+		  :dims (list rows cols)
+		  :buffer buffer))
+	 (dot-len (second (dims t1))))
+    (dotimes (i rows result)
+      (dotimes (j cols)
+	(dotimes (k dot-len)
 	  (incf (tref result i j)
 		(* (tref t1 i k) (tref t2 k j))))))))
 
-(define-var-fn matmul #'t-matmul)
+(defgrad mm (t-out t1 t2)
+  (mm (grad t-out) (transpose t2))
+  (mm (transpose t1) (grad t-out)))
 
-(define-grad-fn matmul (v-out v1 v2)
-  (matmul (grad v-out) (transpose v2))
-  (matmul (transpose v1) (grad v-out)))
+;;;;; entrywise multiplication
+(defdiff mul (t1 t2)
+  (entrywise #'* t1 t2))
 
-;; Sigmoid
-(defun sig (x)
-  (/ 1 (+ 1 (exp (- x)))))
+;;;;; entrywise subtraction
+(defdiff sub (t1 t2)
+  (entrywise #'- t1 t2))
 
-(defun t-sigmoid (t1)
-  (entrywise-tensor-fn #'sig t1))
+(defun sub! (t1 t2)
+  (entrywise! #'- t1 t2))
 
-(define-var-fn sigmoid #'t-sigmoid)
+;;;;; Sigmoid
+(defun scalar-sigmoid (x)
+  (/ 1.0 (+ 1.0 (exp (- x)))))
 
-(defun dsig (v)
-  (let ((ones (ones (dims (tensor v)))))
-    (mul v (sub ones v))))
+(defdiff sigmoid (t1)
+  (entrywise #'scalar-sigmoid t1))
 
-(define-grad-fn sigmoid (v-out v)
-  (mul (grad v-out) (dsig v-out)))
+(defgrad sigmoid (t-out t1)
+  (let ((ones (ones (dims t-out))))
+    (mul (grad t-out)
+	 (mul t-out (sub ones t-out)))))
 
-;; MSE loss
-(defun t-mse (t1 t2)
+;;;;; Scaling
+(defun singleton (val)
+  (make-instance
+   'tensor
+   :buffer (make-array 1 :initial-element val)))
+
+(defun singleton? (t1)
+  (equal (entry-count t1) 1))
+
+(defun singleton-val (t1)
+  (assert (singleton? t1))
+  (aref (buffer t1) 0))
+
+(defun scale (alpha t1)
+  (entrywise (lambda (x) (* alpha x)) t1))
+
+(defdiff scale% (t1 t2)
+  (assert (singleton? t1))
+  (entrywise (lambda (entry) (* (singleton-val t1) entry))
+	     t2))
+
+(defun scale! (alpha t1)
+  (entrywise! (lambda (x) (* alpha x)) t1))
+
+;;;;; Mean squared error
+(defdiff mse (t1 t2)
   (assert (same-shape? t1 t2))
-  (let ((result (make-instance
-		 'tensor
-		 :buffer
-		 (make-array 1)))
-	(n (entry-count t1))
-	(acc 0.0))
-    (dotimes (i n)
-      (incf acc
-	    (expt (- (aref (buffer t1) i)
-		     (aref (buffer t2) i))
-		  2)))
-    (setf (aref (buffer result) 0)
-	  (/ acc n))
-    result))
+  (let* ((n (entry-count t1))
+	 (it (make-array n)))
+    (map-into it
+	      (lambda (x y)
+		(expt (- x y) 2))
+	      (buffer t1)
+	      (buffer t2))
+    (setf it (reduce #'+ it))
+    (setf it (/ it n))
+    (singleton it)))
 
-(define-var-fn mse #'t-mse)
-
-(define-grad-fn mse (v-out v1 v2)
-  (scale (mul (grad v-out)
-	      (scalar (/ 1 (entry-count (tensor v-out)))))
-	 (sub v1 v2))
-  (scale (mul (grad v-out)
-	      (scalar (/ 1 (entry-count (tensor v-out)))))
-	 (sub v2 v1)))
+(defgrad mse (t-out t1 t2)
+  (scale% t-out (sub t1 t2))
+  (scale% t-out (sub t2 t1)))
 
 ;; Backprop
-(defun compute-parent-grads (v)
-  (funcall (get-grad-fn (op v)) v))
+(defun detach-all-grads (t1)
+  (setf (grad t1) nil)
+  (when (parents t1)
+    (mapc #'detach-all-grads (parents t1))))
 
-(defun backward (v)
-  (assert (scalar? (tensor v)))
-  (setf (grad v) (scalar 1.0))
-  (labels ((recur (var)
-	     (when (parents var)
-	       (compute-parent-grads var)
-	       (mapc #'recur (parents var)))))
-    (recur v)
+(defun compute-parent-grads (t1)
+  (funcall (get-grad-fn (op t1)) t1))
+
+(defun backward (t1)
+  ;; Only compute gradients wrt a scalar
+  (assert (singleton? t1))
+  ;; ensure no lingering gradients in the graph
+  (detach-all-grads t1)
+  ;; backpropagation
+  (setf (grad t1) (singleton 1.0))
+  (labels ((backprop (tn)
+	     (when (parents tn)
+	       (compute-parent-grads tn)
+	       (mapc #'backprop (parents tn)))))
+    (backprop t1)
     nil))
 
+(defmacro with-gradient-of (cost &body body)
+  `(progn
+     (backward ,cost)
+     ,@body
+     (detach-all-grads ,cost)))
 

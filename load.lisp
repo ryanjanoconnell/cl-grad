@@ -1,0 +1,5 @@
+(in-package :cl-user)
+(load "./cl-grad.lisp")
+(load "./dataset.lisp")
+(load "./fnn.lisp")
+(load "./mnist.lisp")
