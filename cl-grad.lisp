@@ -169,19 +169,6 @@
 (defun add! (t1 t2)
   (entrywise! #'+ t1 t2))
 
-;;;;; transpose
-(defdiff transpose (t1)
-  (assert (matrix? t1))
-  (let* ((buffer (make-array (entry-count t1)))
-	 (rows (second (dims t1)))
-	 (cols (first (dims t1)))
-	 (dims (list rows cols))
-	 (result (make-instance
-		  'tensor :dims dims :buffer buffer)))
-    (dotimes (i rows result)
-      (dotimes (j cols)
-	(setf (tref result i j)
-	      (tref t1 j i))))))
 
 ;;;;; matrix matrix multiplication
 (defun matrix? (t1)
@@ -212,6 +199,21 @@
 (defgrad mm (t-out t1 t2)
   (mm (grad t-out) (transpose t2))
   (mm (transpose t1) (grad t-out)))
+
+;;;;; transpose
+(defdiff transpose (t1)
+  (assert (matrix? t1))
+  (let* ((buffer (make-array (entry-count t1)))
+	 (rows (second (dims t1)))
+	 (cols (first (dims t1)))
+	 (dims (list rows cols))
+	 (result (make-instance
+		  'tensor :dims dims :buffer buffer)))
+    (dotimes (i rows result)
+      (dotimes (j cols)
+	(setf (tref result i j)
+	      (tref t1 j i))))))
+
 
 ;;;;; entrywise multiplication
 (defdiff mul (t1 t2)
