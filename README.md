@@ -1,4 +1,4 @@
-cl-grad is an implementation of reverse mode automatic differentiation for tensors. When tensor operations are performed, a computation graph is constucted. Then the function `backward` can be called to computate the of the terminal node with respect to the inputs. Here is an example with the operations used in feed forward neural networks. Suppose that `w` is an NxM matrix and `x`, `y`, `b` are Mx1 matrices.
+cl-grad is an implementation of reverse mode automatic differentiation for tensors. When tensor operations are performed, a computation graph is constucted. Then the function `backward` can be called to compute the gradient of the terminal node with respect to the inputs. Here is an example with the operations used in feed forward neural networks. Suppose that `w` is an NxM matrix and `x`, `y`, `b` are Mx1 matrices.
 
 ```common-lisp
 (let* ((affine     (add (mm w x) b))
@@ -23,7 +23,6 @@ The macro `defgrad` is used to define the gradient functions of a differentiable
   ;; gradient of t2
   (grad t-out))
 ```
-
 Now `add` can be used to operate on tensors in a differentiable manner.
 
 The file `fnn.lisp` shows how cl-grad can be used to build a feed forward neural network in about 50 lines of code, and mnist.lisp applies a feed feed forward neural network to the MNIST dataset and achieves around 92% accuracy on the test set after a single epoch.
